@@ -138,7 +138,7 @@ build_local_ui() {
   step "Building local-ui (Next.js static export, served by the plugin)"
   log "This compiles the workspace UI bundle. Expect ~30-60s on first run."
 
-  ( cd "$UI_DIR" && pnpm install --no-frozen-lockfile --registry="$NPM_REGISTRY" ) \
+  ( cd "$UI_DIR" && pnpm install --no-frozen-lockfile --ignore-scripts --registry="$NPM_REGISTRY" ) \
     || fatal "local-ui pnpm install failed. See output above."
 
   # Pass through CAMPFIRE_BASE_PATH if we computed one — next.config.ts reads
@@ -168,7 +168,7 @@ write_external_url_sidecar() {
 build_plugin() {
   step "Building plugin (pnpm install + esbuild bundle)"
 
-  ( cd "$PLUGIN_DIR" && pnpm install --no-frozen-lockfile --registry="$NPM_REGISTRY" ) \
+  ( cd "$PLUGIN_DIR" && pnpm install --no-frozen-lockfile --ignore-scripts --registry="$NPM_REGISTRY" ) \
     || fatal "plugin pnpm install failed. See output above."
 
   ( cd "$PLUGIN_DIR" && pnpm build ) \
