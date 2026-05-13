@@ -8,12 +8,15 @@
   "main": "./dist/index.js",
   "files": [
     "dist",
+    "static",
     "prompts",
     "openclaw.plugin.json",
     "README.md"
   ],
   "scripts": {
+    "bundle-ui": "cd ../local-ui && pnpm install --no-frozen-lockfile --silent && pnpm build && rm -rf ../plugin/static && cp -r out ../plugin/static",
     "build": "rm -rf dist && esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --external:openclaw --external:openclaw/* --external:node:* --loader:.json=json --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "build:all": "pnpm bundle-ui && pnpm build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },

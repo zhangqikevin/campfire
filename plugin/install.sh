@@ -10,25 +10,27 @@ set -euo pipefail
 #   curl -fsSL https://raw.githubusercontent.com/zhangqikevin/campfire/main/plugin/install.sh | bash -s -- uninstall
 #
 # What this does:
-#   1. Verifies prereqs (openclaw CLI ≥ 2026.4.12, Node ≥ 22.5 for node:sqlite, pnpm).
-#   2. Pulls just the plugin/ subdirectory from github.com/zhangqikevin/campfire.
-#   3. Builds the esbuild bundle.
-#   4. Removes node_modules (openclaw's plugin scanner trips on pnpm symlinks).
-#   5. Registers the plugin with openclaw and restarts the gateway.
-#   6. Verifies the plugin shows up as enabled.
+#   1. Verifies prereqs (openclaw CLI, Node ≥ 22.5, pnpm).
+#   2. Pulls the campfire repo (plugin/ + local-ui/) via degit.
+#   3. Builds local-ui (Next.js static export) → bundles into plugin/static/.
+#   4. Builds plugin (esbuild bundle).
+#   5. Strips node_modules (openclaw's plugin scanner trips on pnpm symlinks).
+#   6. Registers the plugin with openclaw and restarts the gateway.
 #
-# Compared to openclaw-os's install.sh, this script DOES NOT:
-#   - Modify tools.alsoAllow in your openclaw.json (silent permission expansion).
-#   - Open a browser window. The Campfire UI lives at the Campfire web app,
-#     not on your gateway, so there's no local URL to land on.
+# After install, run `openclaw campfire url` and open the printed URL —
+# no separate web server, no Postgres, no Docker. The plugin serves the
+# workspace UI on the gateway's own HTTP port.
 
-# Suppress corepack's interactive download prompt — there is no TTY in `curl | bash`.
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
 PREFIX="[campfire-plugin]"
 REPO="zhangqikevin/campfire"
-SRC_SUBPATH="plugin"
-SRC_DIR="$HOME/.openclaw/campfire-plugin"
+# We pull the whole repo because we need both `plugin/` and `local-ui/`;
+# the latter gets statically exported and bundled into the plugin's
+# static/ directory so the gateway can serve the workspace UI itself.
+SRC_DIR="$HOME/.openclaw/campfire-src"
+PLUGIN_DIR="$SRC_DIR/plugin"
+UI_DIR="$SRC_DIR/local-ui"
 PLUGIN_ID="campfire-plugin"
 
 BOLD='\033[1m'
@@ -59,9 +61,6 @@ check_prereqs() {
   require_cmd node "Node.js not found. Install Node 22.5+ from https://nodejs.org"
   require_cmd npx "npx not found. Reinstall Node.js to get npx."
 
-  # The plugin uses node:sqlite — a Node 22.5+ built-in. Anything older blows
-  # up at plugin load time with "Cannot find module 'node:sqlite'". Catch it
-  # here so the user knows what to fix.
   local node_version node_major node_minor
   node_version="$(node -p 'process.versions.node')"
   node_major="$(printf '%s' "$node_version" | cut -d. -f1)"
@@ -80,7 +79,7 @@ check_prereqs() {
 }
 
 download_source() {
-  step "Downloading plugin source ($REPO/$SRC_SUBPATH)"
+  step "Downloading source ($REPO)"
 
   mkdir -p "$(dirname "$SRC_DIR")"
   if [[ -d "$SRC_DIR" ]]; then
@@ -88,41 +87,60 @@ download_source() {
     rm -rf "$SRC_DIR"
   fi
 
-  npx -y degit "${REPO}/${SRC_SUBPATH}" "$SRC_DIR" \
-    || fatal "degit failed for $REPO/$SRC_SUBPATH. Check network and that the repo is public."
+  npx -y degit "${REPO}" "$SRC_DIR" \
+    || fatal "degit failed for $REPO. Check network and that the repo is public."
 
-  [[ -f "$SRC_DIR/openclaw.plugin.json" ]] \
-    || fatal "Downloaded source is missing openclaw.plugin.json. Repo layout may have changed."
+  [[ -f "$PLUGIN_DIR/openclaw.plugin.json" ]] \
+    || fatal "Downloaded source missing $PLUGIN_DIR/openclaw.plugin.json. Repo layout may have changed."
+  [[ -f "$UI_DIR/package.json" ]] \
+    || fatal "Downloaded source missing $UI_DIR/package.json. Repo layout may have changed."
 
   ok "Downloaded to $SRC_DIR"
+}
+
+build_local_ui() {
+  step "Building local-ui (Next.js static export, served by the plugin)"
+  log "This compiles the workspace UI bundle. Expect ~30-60s on first run."
+
+  ( cd "$UI_DIR" && pnpm install --no-frozen-lockfile --silent ) \
+    || fatal "local-ui pnpm install failed. See output above."
+
+  ( cd "$UI_DIR" && pnpm build ) \
+    || fatal "local-ui build failed. See output above."
+
+  [[ -d "$UI_DIR/out" ]] || fatal "local-ui build did not produce out/."
+
+  rm -rf "$PLUGIN_DIR/static"
+  cp -r "$UI_DIR/out" "$PLUGIN_DIR/static" \
+    || fatal "Could not copy local-ui/out to plugin/static"
+
+  ok "Bundled UI at $PLUGIN_DIR/static/"
 }
 
 build_plugin() {
   step "Building plugin (pnpm install + esbuild bundle)"
 
-  # --no-frozen-lockfile so a future drift in the lockfile doesn't break the
-  # one-liner install. CI builds the plugin with the frozen lockfile, so the
-  # version we publish via git is reproducible; this is just defensive.
-  ( cd "$SRC_DIR" && pnpm install --no-frozen-lockfile --silent ) \
-    || fatal "pnpm install failed. See output above."
+  ( cd "$PLUGIN_DIR" && pnpm install --no-frozen-lockfile --silent ) \
+    || fatal "plugin pnpm install failed. See output above."
 
-  ( cd "$SRC_DIR" && pnpm build ) \
-    || fatal "esbuild bundle failed. See output above."
+  ( cd "$PLUGIN_DIR" && pnpm build ) \
+    || fatal "plugin esbuild bundle failed. See output above."
 
-  [[ -f "$SRC_DIR/dist/index.js" ]] || fatal "Build did not produce dist/index.js."
+  [[ -f "$PLUGIN_DIR/dist/index.js" ]] || fatal "Build did not produce dist/index.js."
 
   ok "Built dist/index.js"
 }
 
 shrink_source() {
   step "Removing node_modules (pnpm symlinks trip openclaw's install scanner)"
-  rm -rf "$SRC_DIR/node_modules" 2>/dev/null || true
-  ok "node_modules removed (bundled dist/ retained)"
+  # Recursive — catches nested workspaces under local-ui/ as well as plugin/.
+  find "$SRC_DIR" -type d -name node_modules -prune -exec rm -rf {} + 2>/dev/null || true
+  ok "node_modules removed (built artifacts kept)"
 }
 
 install_plugin() {
   step "Registering plugin with OpenClaw"
-  openclaw plugins install "$SRC_DIR" --force \
+  openclaw plugins install "$PLUGIN_DIR" --force \
     || fatal "openclaw plugins install failed. Run with --verbose for detail."
   ok "Plugin installed"
 }
@@ -181,16 +199,17 @@ remove_source() {
 }
 
 print_next_steps() {
-  printf "\n  ${BOLD}Next:${NC} grab your gateway token —\n"
-  printf "    ${INFO}cat ~/.openclaw/openclaw.json | jq -r .gateway.auth.token${NC}\n\n"
-  printf "  Open Campfire (http://localhost:3000 if running locally) →\n"
-  printf "  Bind an agent → URL = ${BOLD}ws://localhost:18789${NC} + paste the token.\n\n"
+  printf "\n  ${BOLD}Open the workspace:${NC}\n"
+  printf "    ${INFO}openclaw campfire url${NC}\n\n"
+  printf "  That prints a URL like ${BOLD}http://localhost:18789/plugins/campfire/setup/#token=…${NC}\n"
+  printf "  Open it in a browser; the token gets saved locally and you land in chat.\n\n"
 }
 
 do_install() {
   banner
   check_prereqs
   download_source
+  build_local_ui
   build_plugin
   shrink_source
   install_plugin

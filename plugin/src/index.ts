@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
+import { stat } from "node:fs/promises";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { jsonResult } from "openclaw/plugin-sdk/agent-runtime";
@@ -558,5 +560,169 @@ export default definePluginEntry({
     );
 
     api.logger.info("[campfire-plugin] all gateway RPC methods registered");
+
+    // ── Static UI route ─────────────────────────────────────────────────────
+    // Serves the local-ui static export bundled into ../static/. The Campfire
+    // workspace opens via this route, with the auth token passed in the URL
+    // fragment (see CLI command below). All connections back to the gateway
+    // go to the same origin so there's no CORS / cross-host concern.
+    //
+    // Path traversal guard uses `path.relative()` and checks the result does
+    // not start with `..`. This is mechanically correct in a way the
+    // `slice(0, -1)` startsWith trick openclaw-os-plugin used was not.
+    const STATIC_ROOT = path.resolve(__dirname, "..", "static");
+    const ROUTE_PREFIX = "/plugins/campfire";
+    const MIME_TYPES: Record<string, string> = {
+      ".html": "text/html; charset=utf-8",
+      ".js": "application/javascript; charset=utf-8",
+      ".mjs": "application/javascript; charset=utf-8",
+      ".css": "text/css; charset=utf-8",
+      ".json": "application/json; charset=utf-8",
+      ".map": "application/json; charset=utf-8",
+      ".svg": "image/svg+xml",
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".gif": "image/gif",
+      ".webp": "image/webp",
+      ".ico": "image/x-icon",
+      ".woff": "font/woff",
+      ".woff2": "font/woff2",
+      ".ttf": "font/ttf",
+      ".txt": "text/plain; charset=utf-8",
+    };
+
+    const isInsideStaticRoot = (absPath: string): boolean => {
+      const rel = path.relative(STATIC_ROOT, absPath);
+      // path.relative returns "" when the paths are equal, a relative path
+      // that does NOT start with `..` if inside, or one starting with `..`
+      // (or an absolute path on Windows) if outside.
+      return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+    };
+
+    const serveFile = (res: ServerResponse, absPath: string): void => {
+      const ext = path.extname(absPath).toLowerCase();
+      const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
+      res.writeHead(200, {
+        "Content-Type": contentType,
+        // HTML responses are small and the install-bound version can change
+        // any time. Hashed assets under _next/static are immutable so we let
+        // the browser cache them for a day.
+        "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=86400",
+      });
+      createReadStream(absPath)
+        .on("error", (err) => {
+          api.logger.warn(`[campfire-plugin] static stream error ${absPath}: ${err}`);
+          if (!res.headersSent) res.writeHead(500);
+          res.end();
+        })
+        .pipe(res);
+    };
+
+    const tryServe = async (res: ServerResponse, candidate: string): Promise<boolean> => {
+      if (!isInsideStaticRoot(candidate)) return false;
+      try {
+        const stats = await stat(candidate);
+        if (stats.isFile()) {
+          serveFile(res, candidate);
+          return true;
+        }
+      } catch {
+        // not present — try the next candidate
+      }
+      return false;
+    };
+
+    api.registerHttpRoute({
+      path: ROUTE_PREFIX,
+      auth: "plugin",
+      match: "prefix",
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        const rawUrl = req.url ?? "/";
+        const urlPath = rawUrl.split("?")[0]!.split("#")[0]!;
+        let relPath = urlPath.startsWith(ROUTE_PREFIX)
+          ? urlPath.slice(ROUTE_PREFIX.length)
+          : urlPath;
+        if (relPath === "" || relPath === "/") relPath = "/index.html";
+
+        let safeRel: string;
+        try {
+          safeRel = decodeURIComponent(relPath);
+        } catch {
+          res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end("Bad Request");
+          return true;
+        }
+
+        const absPath = path.resolve(STATIC_ROOT, "." + safeRel);
+
+        // 1) direct file (e.g. /_next/static/<hash>.js, /favicon.svg)
+        if (await tryServe(res, absPath)) return true;
+        // 2) Next.js trailing-slash export: /setup/ → /setup/index.html
+        if (await tryServe(res, path.join(absPath, "index.html"))) return true;
+        // 3) /setup → setup.html (defensive — trailing-slash exports rarely need this)
+        if (await tryServe(res, absPath + ".html")) return true;
+        // 4) SPA fallback so client-side navigation links resolve
+        if (await tryServe(res, path.join(STATIC_ROOT, "index.html"))) return true;
+
+        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Not Found");
+        return true;
+      },
+    });
+
+    const uiPort = api.config.gateway?.port ?? 18789;
+    api.logger.info(
+      `[campfire-plugin] workspace UI mounted at http://127.0.0.1:${uiPort}${ROUTE_PREFIX}/ (root ${STATIC_ROOT})`,
+    );
+
+    // ── CLI: openclaw campfire url ───────────────────────────────────────────
+    // Mirrors openclaw-os's `openclaw os url` — prints a setup link with the
+    // gateway auth token in the URL fragment, so the browser can pick it up
+    // and stash it in IndexedDB without ever round-tripping through query
+    // params (which would leak via Referer).
+    api.registerCli(
+      ({ program, config }) => {
+        const group = program
+          .command("campfire")
+          .description("Campfire — local workspace served by this plugin");
+
+        group
+          .command("url")
+          .description("Print the Campfire workspace URL with the auth token embedded")
+          .action(() => {
+            const port = config.gateway?.port ?? 18789;
+            const bind = config.gateway?.bind;
+            const customHost = config.gateway?.customBindHost;
+
+            let host = "127.0.0.1";
+            if (bind === "custom" && customHost) {
+              host = customHost;
+            } else if (bind === "tailnet") {
+              process.stderr.write(
+                "[campfire] gateway.bind=tailnet — using 127.0.0.1 in the URL. " +
+                  "If the gateway isn't bound to loopback this link won't reach it.\n",
+              );
+            }
+
+            const tokenInput = config.gateway?.auth?.token;
+            if (typeof tokenInput !== "string" || !tokenInput) {
+              const reason =
+                tokenInput == null
+                  ? "gateway.auth.token is missing"
+                  : "gateway.auth.token is a SecretRef — resolve it first or set a plain string";
+              throw new Error(`${reason}. Run \`openclaw onboard\` to set one.`);
+            }
+
+            const tk = encodeURIComponent(tokenInput);
+            process.stdout.write(
+              `http://${host}:${port}${ROUTE_PREFIX}/setup/#token=${tk}\n`,
+            );
+          });
+      },
+      { commands: ["campfire"] },
+    );
+
+    api.logger.info("[campfire-plugin] static UI route + CLI registered");
   },
 });
