@@ -1,4 +1,8 @@
 import type { NextConfig } from "next";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // This is the "local mode" Next.js app: statically exported, bundled into
 // campfire-plugin, and served by the plugin at /plugins/campfire/ on the
@@ -25,6 +29,22 @@ const nextConfig: NextConfig = {
   // Trailing slash so directory-style URLs resolve cleanly when served as
   // static files by the plugin (e.g. /workspace/ vs /workspace).
   trailingSlash: true,
+  // The repo root has its own pnpm-lock.yaml (for the SaaS app in ../src).
+  // Without this, Next.js picks that as the workspace root and gets confused
+  // about where node_modules lives.
+  outputFileTracingRoot: __dirname,
+  webpack: (config) => {
+    // Files in ../src/components/* import @openuidev/* etc. Node's module
+    // resolution walks UP from the importing file looking for node_modules,
+    // and never finds local-ui/node_modules (which is a *sibling* path).
+    // Explicitly add local-ui/node_modules as a resolution root so cross-dir
+    // imports work without restructuring into a real pnpm workspace.
+    const localUiModules = path.resolve(__dirname, "node_modules");
+    config.resolve = config.resolve ?? {};
+    const existing: string[] = config.resolve.modules ?? ["node_modules"];
+    config.resolve.modules = [localUiModules, ...existing];
+    return config;
+  },
 };
 
 export default nextConfig;
