@@ -41,5 +41,15 @@
       "pluginApi": ">=2026.4.12",
       "minGatewayVersion": "2026.4.12"
     }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@google/genai",
+      "esbuild",
+      "koffi",
+      "openclaw",
+      "protobufjs",
+      "tree-sitter-bash"
+    ]
   }
 }
