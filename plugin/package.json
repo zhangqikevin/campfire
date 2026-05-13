@@ -1,0 +1,42 @@
+{
+  "name": "@campfire/openclaw-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw plugin that backs the Campfire workspace. Exposes app/artifact/db tools to the agent and the campfire.* gateway RPCs to the Campfire client.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "prompts",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --external:openclaw --external:openclaw/* --external:node:* --loader:.json=json --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@openuidev/lang-core": "^0.2.4"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.4.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.25.0",
+    "openclaw": "^2026.5.7",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.4.12",
+      "minGatewayVersion": "2026.4.12"
+    }
+  }
+}

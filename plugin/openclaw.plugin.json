@@ -1,0 +1,28 @@
+{
+  "id": "campfire-plugin",
+  "name": "Campfire",
+  "description": "Persistence + tools backing the Campfire web workspace. Injects the OpenUI Lang system prompt for sessions originating from Campfire.",
+  "version": "0.1.0",
+  "enabledByDefault": true,
+  "activation": { "onStartup": true },
+  "contracts": {
+    "tools": [
+      "create_markdown_artifact",
+      "update_markdown_artifact",
+      "get_artifact",
+      "list_artifacts",
+      "db_query",
+      "db_execute",
+      "app_create",
+      "app_update",
+      "get_app"
+    ]
+  },
+  "configSchema": {
+    "jsonSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    }
+  }
+}
