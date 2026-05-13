@@ -49,4 +49,31 @@ describe("parseSegments", () => {
   it("returns an empty array for empty input", () => {
     expect(parseSegments("")).toEqual([]);
   });
+
+  it("treats fence-less assignment-heavy text as pure openui-lang", () => {
+    // No fences — but every non-blank line is a top-level assignment. Some
+    // models skip the fence wrapper; without this fallback the whole reply
+    // would render as plain text.
+    const input = [
+      "title = CardHeader(\"Hello\")",
+      "chart = LineChart(data=[1,2,3])",
+      "root = Stack([title, chart])",
+    ].join("\n");
+    const segs = parseSegments(input);
+    expect(segs).toEqual([{ kind: "lang", content: input, complete: true }]);
+  });
+
+  it("does NOT treat prose with an inline equals as pure code", () => {
+    const input = "The capital of France = Paris. Easy question.";
+    const segs = parseSegments(input);
+    expect(segs[0]?.kind).toBe("text");
+  });
+
+  it("does NOT treat input containing any backtick as pure code", () => {
+    // If the model used any fence markers we trust its intent and don't
+    // promote the whole thing.
+    const input = "x = 1\n`y` is just inline code";
+    const segs = parseSegments(input);
+    expect(segs[0]?.kind).toBe("text");
+  });
 });

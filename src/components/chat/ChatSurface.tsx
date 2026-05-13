@@ -69,14 +69,14 @@ export function ChatSurface({ sessionKey }: ChatSurfaceProps) {
               <div className="mb-1 text-xs uppercase tracking-wide text-fg-subtle">
                 {m.role === "user" ? "You" : "Agent"}
               </div>
-              <MessageContent content={m.content} />
+              <MessageContent content={m.content} onFollowUp={send} />
             </div>
           ))}
 
           {streamingText ? (
             <div>
               <div className="mb-1 text-xs uppercase tracking-wide text-fg-subtle">Agent</div>
-              <MessageContent content={streamingText} isStreaming />
+              <MessageContent content={streamingText} isStreaming onFollowUp={send} />
             </div>
           ) : null}
         </div>
