@@ -24,6 +24,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // plugin sessions, …) on the same gateway are untouched.
 const CAMPFIRE_SUFFIX = ":campfire";
 
+// External base URL (origin + path prefix) at which this gateway is reachable
+// from a browser. Required when the gateway sits behind a reverse proxy with
+// a path prefix — e.g. `https://example.com/oc/pokeball`. install.sh writes
+// this to a sidecar file when CAMPFIRE_EXTERNAL_URL is set at install time.
+// Falls back to constructing `http://<gateway-host>:<gateway-port>` when
+// absent. Used by the `openclaw campfire url` CLI to print a URL the user
+// can actually open.
+const EXTERNAL_URL: string | null = (() => {
+  const file = path.resolve(__dirname, "..", "external-url");
+  try {
+    const text = readFileSync(file, "utf-8").trim();
+    return text || null;
+  } catch {
+    return null;
+  }
+})();
+
 // Load the OpenUI Lang spec at module init. We FAIL LOUD if it's missing —
 // openclaw-os silently degraded to an empty prompt, which would make every
 // chat reply lose its UI rendering with no error message visible to the user.
@@ -715,8 +732,13 @@ export default definePluginEntry({
             }
 
             const tk = encodeURIComponent(tokenInput);
+            // If installed with CAMPFIRE_EXTERNAL_URL set (reverse-proxy
+            // deployments), use that instead of the local host:port — the
+            // user can't necessarily reach the gateway at 127.0.0.1.
+            const base =
+              EXTERNAL_URL?.replace(/\/+$/, "") ?? `http://${host}:${port}`;
             process.stdout.write(
-              `http://${host}:${port}${ROUTE_PREFIX}/setup/#token=${tk}\n`,
+              `${base}${ROUTE_PREFIX}/setup/#token=${tk}\n`,
             );
           });
       },

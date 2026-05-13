@@ -68,6 +68,28 @@ openclaw campfire url
 That prints a URL like `http://localhost:18789/plugins/campfire/setup/#token=…`.
 Open it in a browser — token gets saved locally and you land in chat.
 
+### Reverse-proxy / hosted gateway
+
+If your gateway sits behind a reverse proxy with a path prefix
+(e.g. `https://pods.example.com/oc/<gateway>/`), the static export needs
+to know that prefix so HTML asset URLs include it. Set
+`CAMPFIRE_EXTERNAL_URL` when installing:
+
+```bash
+CAMPFIRE_EXTERNAL_URL=https://pods.example.com/oc/pokeball \
+  curl -fsSL https://raw.githubusercontent.com/zhangqikevin/campfire/main/plugin/install.sh | bash
+```
+
+The installer extracts the URL path (`/oc/pokeball`), builds the static
+UI with `basePath=/oc/pokeball/plugins/campfire`, and writes a sidecar
+file the plugin reads at startup so `openclaw campfire url` prints the
+proxy URL the user can actually open.
+
+Requirements for the proxy:
+- HTTP requests at `/oc/pokeball/*` must be forwarded to the gateway with
+  the prefix stripped (so the gateway sees `/plugins/campfire/...`).
+- WebSocket upgrades at the same prefix must be forwarded the same way.
+
 **Manual** (if you've cloned this repo already):
 
 ```bash

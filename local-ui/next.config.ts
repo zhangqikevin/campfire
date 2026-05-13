@@ -7,10 +7,19 @@ import type { NextConfig } from "next";
 //
 // The SaaS-mode app lives at ../src and is a completely separate Next.js
 // project (with auth, Postgres, multi-tenancy).
+
+// basePath is configurable so the same export works whether the gateway is
+// reached directly (default `/plugins/campfire`) or behind a reverse proxy
+// with a path prefix (e.g. `CAMPFIRE_BASE_PATH=/oc/pokeball/plugins/campfire`
+// for a gateway hosted at `https://example.com/oc/pokeball/`).
+// install.sh derives this from CAMPFIRE_EXTERNAL_URL; building manually
+// requires setting CAMPFIRE_BASE_PATH yourself.
+const basePath = process.env["CAMPFIRE_BASE_PATH"] ?? "/plugins/campfire";
+
 const nextConfig: NextConfig = {
   output: "export",
-  basePath: "/plugins/campfire",
-  assetPrefix: "/plugins/campfire",
+  basePath,
+  assetPrefix: basePath,
   reactStrictMode: true,
   images: { unoptimized: true },
   // Trailing slash so directory-style URLs resolve cleanly when served as

@@ -105,6 +105,35 @@ download_source() {
 # case where the .npmrc is overridden by env/global config.
 readonly NPM_REGISTRY="https://registry.npmjs.org/"
 
+# CAMPFIRE_EXTERNAL_URL — set this when your gateway sits behind a reverse
+# proxy with a path prefix, e.g.:
+#
+#   CAMPFIRE_EXTERNAL_URL=https://pods.favie.us/oc/pokeball \
+#     curl -fsSL https://.../install.sh | bash
+#
+# The script extracts the URL path (e.g. `/oc/pokeball`), uses it to set
+# Next.js's basePath at build time (so HTML asset URLs include the proxy
+# prefix), and writes the URL to a sidecar file the plugin reads at
+# startup (so `openclaw campfire url` prints a link a browser can reach).
+CAMPFIRE_EXTERNAL_URL="${CAMPFIRE_EXTERNAL_URL:-}"
+CAMPFIRE_BASE_PATH=""
+if [[ -n "$CAMPFIRE_EXTERNAL_URL" ]]; then
+  # Use node to parse — bash URL parsing is a footgun.
+  url_path=$(node -e "
+    try {
+      const u = new URL(process.argv[1]);
+      const p = u.pathname.replace(/\/+\$/, '');
+      process.stdout.write(p);
+    } catch (e) {
+      process.stderr.write('Invalid CAMPFIRE_EXTERNAL_URL: ' + e.message);
+      process.exit(1);
+    }
+  " "$CAMPFIRE_EXTERNAL_URL") || fatal "Failed to parse CAMPFIRE_EXTERNAL_URL ($CAMPFIRE_EXTERNAL_URL)"
+  CAMPFIRE_BASE_PATH="${url_path}/plugins/campfire"
+  log "Reverse-proxy mode: external URL = $CAMPFIRE_EXTERNAL_URL"
+  log "                    basePath     = $CAMPFIRE_BASE_PATH"
+fi
+
 build_local_ui() {
   step "Building local-ui (Next.js static export, served by the plugin)"
   log "This compiles the workspace UI bundle. Expect ~30-60s on first run."
@@ -112,7 +141,9 @@ build_local_ui() {
   ( cd "$UI_DIR" && pnpm install --no-frozen-lockfile --silent --registry="$NPM_REGISTRY" ) \
     || fatal "local-ui pnpm install failed. See output above."
 
-  ( cd "$UI_DIR" && pnpm build ) \
+  # Pass through CAMPFIRE_BASE_PATH if we computed one — next.config.ts reads
+  # it. Empty string falls back to the default `/plugins/campfire`.
+  ( cd "$UI_DIR" && CAMPFIRE_BASE_PATH="$CAMPFIRE_BASE_PATH" pnpm build ) \
     || fatal "local-ui build failed. See output above."
 
   [[ -d "$UI_DIR/out" ]] || fatal "local-ui build did not produce out/."
@@ -122,6 +153,16 @@ build_local_ui() {
     || fatal "Could not copy local-ui/out to plugin/static"
 
   ok "Bundled UI at $PLUGIN_DIR/static/"
+}
+
+write_external_url_sidecar() {
+  # Only write the file when we actually have an external URL; if it doesn't
+  # exist, the plugin falls back to its localhost-derived behavior.
+  if [[ -n "$CAMPFIRE_EXTERNAL_URL" ]]; then
+    step "Writing external-URL sidecar so the CLI prints the proxy URL"
+    printf '%s' "$CAMPFIRE_EXTERNAL_URL" > "$PLUGIN_DIR/external-url"
+    ok "Wrote $PLUGIN_DIR/external-url"
+  fi
 }
 
 build_plugin() {
@@ -218,6 +259,7 @@ do_install() {
   download_source
   build_local_ui
   build_plugin
+  write_external_url_sidecar
   shrink_source
   install_plugin
   restart_gateway
