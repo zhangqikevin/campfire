@@ -18,6 +18,7 @@
       "get_app"
     ]
   },
+  "skills": ["./skills"],
   "configSchema": {
     "jsonSchema": {
       "type": "object",

@@ -1,4 +1,5 @@
-import { createReadStream, readFileSync } from "node:fs";
+import { mergeStatements } from "@openuidev/lang-core";
+import { createReadStream, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
@@ -15,6 +16,7 @@ import {
 import { AppStore } from "./app-store.js";
 import { ArtifactStore } from "./artifact-store.js";
 import { runDbExecute, runDbQuery } from "./db.js";
+import { lintOpenUICode, type LintReport } from "./lint-openui.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -74,7 +76,7 @@ This chat is rendered by the **Campfire client**. The user wants answers as inte
 - Answer would run past ~10 lines → wrap in \`SectionBlock([SectionItem(...)])\`.
 - Suggesting next actions → end with \`FollowUpBlock([FollowUpItem(...)])\`.
 
-The inline surface is **STATIC**: no \`Query\`, no \`Mutation\`, no \`$state\`. Need live data, refresh, or write actions? That's a durable **app** — call \`app_create\` with the openui-lang program.
+The inline surface is **STATIC**: no \`Query\`, no \`Mutation\`, no \`$state\`. Need live data, refresh, or write actions? That's a durable **app** (\`app_create\`) — a different surface with extra components and a runtime. You **MUST \`read\` \`skills/openui-app/SKILL.md\` before calling \`app_create\` or \`app_update\`**; those tools reject the call until you have. Trigger phrases: "briefing", "morning briefing", "before standup", "daily digest", "dashboard", "command center", "war room", "monitor", "tracker", "control panel", "hub". Once the code is ready, **call \`app_create\` immediately** — don't finish narrating first.
 
 Never explain that you *can* render UI — just render it.
 
@@ -84,15 +86,42 @@ ${INLINE_UI_PROMPT}
 
 ## Cross-cutting rules
 
-1. Inside \`MarkDownRenderer(...)\` text strings, NEVER include triple-backticks — they close the outer \`\`\`openui-lang fence early and the rest renders as raw markdown.
+1. Inside \`MarkDownRenderer(...)\` text strings, NEVER include triple-backticks — they close the outer \`\`\`openui-lang fence early and the rest renders as raw markdown. (Inline-only concern; \`app_create\` takes raw code so the fence can't collide there.)
 
-2. \`app_create\` / \`app_update\` validate the code and report \`validationErrors\` in the response. To fix, call \`app_update\` with ONLY the corrected statements; the runtime merges by name. NEVER re-emit the whole program.
+2. \`app_create\` / \`app_update\` validate the code and report \`validationErrors\` in the response — the app is saved either way. To fix them, call \`app_update\` with ONLY the corrected statements (typically 1–10 lines); the runtime merges by statement name. NEVER re-emit the whole program.
 
-3. **App needs config you don't have?** (API keys, watchlist, thresholds, timezone) — STOP, emit a \`Form\` inline to collect it, THEN \`app_create\`.
+3. **App needs config you don't have?** (API keys, watchlist symbols, monthly burn, target repos, thresholds, timezone) — STOP, emit a \`Form\` inline to collect it, THEN \`app_create\`. Bake plain values into Query defaults or a config table; for secrets/API keys, have the user put them in \`~/.openclaw/workspace/.env\` and read them in the data script — never inline a key into app code. Skip the form only when the request is fully self-describing, or when the config is multi-row mutable state (that belongs in an in-app Form).
+
+4. **"Every morning" / "Monday" / "daily" / "while I sleep" / "pre-fetched"** → propose a cron in the same response, don't wait to be asked. Same for heavy scripts (slow APIs, >50 paginated items, multi-source serial calls): wire cron → SQLite snapshot table → app reads from the DB. Live \`Query("exec")\` is fine for fast/light scripts.
 
 ## Refine flow
 
-When the composer text starts with \`Refine app "..." (id: ...)\` or \`Refine artifact "..." (id: ...)\`, the user is iterating on an existing surface — call \`app_update\` / \`update_markdown_artifact\` with that exact id (a small patch, never the whole program). Do not create a new one.`;
+When the composer text starts with \`Refine app "..." (id: ...)\` or \`Refine artifact "..." (id: ...)\`, the user is iterating on an existing surface. For apps: \`read\` \`skills/openui-app/SKILL.md\` (if not already read this session), then \`app_update\` with that exact id (a 1–10 statement patch — never the whole program). For artifacts: \`update_markdown_artifact\` with that id. Do not create a new one.`;
+
+// Build the lint payload that gets folded into app_create / app_update tool
+// responses. Mirrors openclaw-os's pattern: agent always gets the saved id,
+// AND structured findings + a correction nudge when the lint flagged issues.
+// "Save anyway" is deliberate — rejecting outright forces full-rewrite
+// retries, which is the failure mode that wrecked app quality in the prior
+// project. Small \`app_update\` patches are the right loop.
+function buildLintPayload(report: LintReport): Record<string, unknown> {
+  if (report.ok) return {};
+  const skillNudge =
+    report.findings.length >= 5
+      ? " If you haven't already, `read` `skills/openui-app/SKILL.md` before patching — most of these are catalog/syntax issues the skill covers."
+      : "";
+  return {
+    validationErrors: report.findings,
+    correction: `Your code has ${report.findings.length} validation issue(s). The app IS saved — read each finding's \`message\` and \`hint\`, then call \`app_update\` with ONLY the corrected statements (typically 1–10 lines). The runtime merges by statement name, so untouched lines stay put. NEVER re-emit the whole program.${skillNudge}`,
+    ...(report.hint ? { hallucinationPrimer: report.hint } : {}),
+  };
+}
+
+const APP_SKILL_GATE_MESSAGE =
+  "Read `skills/openui-app/SKILL.md` first — it documents the openui-lang " +
+  "*app* surface (Query, Mutation, $state, Stack, the full component catalog, " +
+  "the lint loop). Reading it is required before `app_create` / `app_update`. " +
+  "Then retry this call.";
 
 export default definePluginEntry({
   id: "campfire-plugin",
@@ -123,6 +152,87 @@ export default definePluginEntry({
     api.on("before_prompt_build", (_event, ctx) => {
       if (!ctx.sessionKey?.endsWith(CAMPFIRE_SUFFIX)) return;
       return { prependSystemContext: CAMPFIRE_PREAMBLE };
+    });
+
+    // ── App-skill gate ───────────────────────────────────────────────────────
+    // The app surface is much larger than the inline surface (Query, Mutation,
+    // $state, lots of components, the lint loop). Without reading the skill
+    // the agent guesses at this surface and quality collapses — that's the
+    // single biggest reason app generation lagged behind openclaw-os in the
+    // MVP build of campfire-plugin. This hook enforces: `app_create` and
+    // `app_update` are blocked until the agent has `read`
+    // `skills/openui-app/SKILL.md` in this session.
+    //
+    // Per-session memory is persisted to a JSON file so a gateway restart
+    // doesn't force the agent to re-read on an ongoing conversation.
+    let appSkillGate: { path: string; sessions: Set<string> } | null = null;
+    const getAppSkillGate = (): { path: string; sessions: Set<string> } => {
+      if (!appSkillGate) {
+        const file = path.join(
+          api.runtime.state.resolveStateDir(),
+          "plugins",
+          "campfire",
+          "app-skill-read-sessions.json",
+        );
+        let sessions: Set<string>;
+        try {
+          const parsed: unknown = JSON.parse(readFileSync(file, "utf-8"));
+          sessions = new Set(
+            Array.isArray(parsed)
+              ? parsed.filter((v): v is string => typeof v === "string")
+              : [],
+          );
+        } catch {
+          sessions = new Set();
+        }
+        appSkillGate = { path: file, sessions };
+      }
+      return appSkillGate;
+    };
+    const markAppSkillRead = (sessionKey: string): void => {
+      const gate = getAppSkillGate();
+      if (gate.sessions.has(sessionKey)) return;
+      gate.sessions.add(sessionKey);
+      try {
+        mkdirSync(path.dirname(gate.path), { recursive: true });
+        writeFileSync(gate.path, JSON.stringify([...gate.sessions], null, 2), "utf-8");
+      } catch (err) {
+        api.logger.warn(
+          `[campfire-plugin] failed to persist app-skill gate: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    };
+
+    api.on("before_tool_call", (event, ctx) => {
+      const sessionKey = ctx.sessionKey;
+      if (typeof sessionKey !== "string" || !sessionKey.endsWith(CAMPFIRE_SUFFIX)) {
+        return;
+      }
+
+      // Mark the session as having read the skill when the agent reads it.
+      if (event.toolName === "read") {
+        const filePath = event.params["file_path"] ?? event.params["path"];
+        if (
+          typeof filePath === "string" &&
+          filePath.replace(/\\/g, "/").includes("openui-app/SKILL.md")
+        ) {
+          markAppSkillRead(sessionKey);
+        }
+        return;
+      }
+
+      if (
+        (event.toolName === "app_create" || event.toolName === "app_update") &&
+        !getAppSkillGate().sessions.has(sessionKey)
+      ) {
+        api.logger.info(
+          `[campfire-plugin] ${event.toolName} blocked — openui-app skill not read in session ${sessionKey}`,
+        );
+        return { block: true, blockReason: APP_SKILL_GATE_MESSAGE };
+      }
+      return;
     });
 
     // ── Tools for the agent ──────────────────────────────────────────────────
@@ -252,13 +362,26 @@ export default definePluginEntry({
           api.logger.info(
             `[campfire-plugin] app_create: title="${params.title}" code=${params.code.length} chars`,
           );
+          const lint = lintOpenUICode(params.code);
+          if (!lint.ok) {
+            api.logger.info(
+              `[campfire-plugin] app_create lint: ${lint.findings.length} finding(s) — ${lint.summary.slice(0, 180)}`,
+            );
+          }
+          // Save unconditionally — surface lint findings back to the agent.
+          // Rejecting outright forces full-rewrite retries; small app_update
+          // patches are the right loop.
           const app = await getAppStore().create({
             title: params.title,
             content: params.code,
             agentId: ctx.agentId ?? "main",
             sessionKey: ctx.sessionKey ?? "",
           });
-          return jsonResult({ id: app.id, title: app.title });
+          return jsonResult({
+            id: app.id,
+            title: app.title,
+            ...buildLintPayload(lint),
+          });
         },
       }),
       { name: "app_create" },
@@ -288,27 +411,48 @@ export default definePluginEntry({
         name: "app_update",
         label: "Update App",
         description:
-          "Replace an app's openui-lang code. Pass the FULL updated program (no statement-merging yet — coming in a later plugin version).",
+          "Apply an incremental edit patch to an existing app. Pass ONLY changed/new openui-lang statements — the runtime merges by statement name into the saved program. Untouched statements stay put. Call get_app first to see the current code.",
         parameters: {
           type: "object" as const,
           properties: {
             id: { type: "string", description: "The app id" },
-            code: { type: "string", description: "Full updated openui-lang source" },
+            patch: {
+              type: "string",
+              description:
+                "openui-lang statements to merge (changed/new only — NOT the whole program)",
+            },
             title: { type: "string", description: "Optional new title" },
           },
-          required: ["id", "code"],
+          required: ["id", "patch"],
         },
         execute: async (
           _id: string,
-          params: { id: string; code: string; title?: string },
+          params: { id: string; patch: string; title?: string },
         ) => {
           const existing = await getAppStore().get(params.id);
           if (!existing) return jsonResult({ error: "App not found", id: params.id });
+
+          api.logger.info(
+            `[campfire-plugin] app_update: id=${params.id} patch=${params.patch.length} chars`,
+          );
+          // Merge by statement name — agent sends only the statements that
+          // changed; mergeStatements splices them into the saved program.
+          const merged = mergeStatements(existing.content, params.patch);
+          const lint = lintOpenUICode(merged);
+          if (!lint.ok) {
+            api.logger.info(
+              `[campfire-plugin] app_update lint: ${lint.findings.length} finding(s) — ${lint.summary.slice(0, 180)}`,
+            );
+          }
           const updated = await getAppStore().update(params.id, {
-            content: params.code,
+            content: merged,
             ...(params.title !== undefined ? { title: params.title } : {}),
           });
-          return jsonResult({ id: updated.id, updatedAt: updated.updatedAt });
+          return jsonResult({
+            id: updated.id,
+            updatedAt: updated.updatedAt,
+            ...buildLintPayload(lint),
+          });
         },
       }),
       { name: "app_update" },
