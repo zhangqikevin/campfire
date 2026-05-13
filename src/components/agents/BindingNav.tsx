@@ -11,6 +11,7 @@ const TABS: Array<{ label: string; segment: string }> = [
   { label: "Chat", segment: "chat" },
   { label: "Apps", segment: "apps" },
   { label: "Artifacts", segment: "artifacts" },
+  { label: "Crons", segment: "crons" },
 ];
 
 export function BindingNav({ bindingId }: BindingNavProps) {
