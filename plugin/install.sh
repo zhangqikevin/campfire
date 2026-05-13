@@ -98,11 +98,18 @@ download_source() {
   ok "Downloaded to $SRC_DIR"
 }
 
+# --registry override defends against users whose global pnpm/npm is pinned
+# to a mirror (cnpm, npmmirror, taobao, corporate proxy) that doesn't have
+# the @openuidev/* renderer packages. Each subdir also ships an .npmrc with
+# the same pin; passing it on the CLI too belt-and-braces against the rare
+# case where the .npmrc is overridden by env/global config.
+readonly NPM_REGISTRY="https://registry.npmjs.org/"
+
 build_local_ui() {
   step "Building local-ui (Next.js static export, served by the plugin)"
   log "This compiles the workspace UI bundle. Expect ~30-60s on first run."
 
-  ( cd "$UI_DIR" && pnpm install --no-frozen-lockfile --silent ) \
+  ( cd "$UI_DIR" && pnpm install --no-frozen-lockfile --silent --registry="$NPM_REGISTRY" ) \
     || fatal "local-ui pnpm install failed. See output above."
 
   ( cd "$UI_DIR" && pnpm build ) \
@@ -120,7 +127,7 @@ build_local_ui() {
 build_plugin() {
   step "Building plugin (pnpm install + esbuild bundle)"
 
-  ( cd "$PLUGIN_DIR" && pnpm install --no-frozen-lockfile --silent ) \
+  ( cd "$PLUGIN_DIR" && pnpm install --no-frozen-lockfile --silent --registry="$NPM_REGISTRY" ) \
     || fatal "plugin pnpm install failed. See output above."
 
   ( cd "$PLUGIN_DIR" && pnpm build ) \
