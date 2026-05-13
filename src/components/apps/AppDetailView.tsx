@@ -31,10 +31,10 @@ export function AppDetailView({ appId }: AppDetailViewProps) {
   );
 
   // Tool provider routes Query()/Mutation() calls inside the app code back to
-  // the gateway's campfire.tools.invoke RPC. Campfire-plugin only exposes
-  // db_query / db_execute through this RPC (not exec, not read) — see
-  // plugin/src/index.ts for the rationale. Apps that need shell or arbitrary
-  // file I/O will fail loudly instead of silently routing to a no-sandbox shell.
+  // the gateway's campfire.tools.invoke RPC. Trust model: tools run on the
+  // user's own OpenClaw gateway (their own machine for local installs);
+  // exec/read are allowed because that's where the SKILL.md teaches the
+  // agent to fetch external data via curl etc. See plugin/src/index.ts.
   const toolProvider = useMemo(() => {
     if (!client || !data?.app) return null;
     const sessionKey = data.app.sessionKey ?? "";
@@ -47,6 +47,10 @@ export function AppDetailView({ appId }: AppDetailViewProps) {
       return result?.result ?? null;
     };
     return {
+      exec: (args: Record<string, unknown>) => proxy("exec", args),
+      bash: (args: Record<string, unknown>) => proxy("exec", args),
+      shell: (args: Record<string, unknown>) => proxy("exec", args),
+      read: (args: Record<string, unknown>) => proxy("read", args),
       db_query: (args: Record<string, unknown>) => proxy("db_query", args),
       db_execute: (args: Record<string, unknown>) => proxy("db_execute", args),
     };

@@ -42,6 +42,10 @@ function AppDetailInner({ appId }: { appId: string }) {
       return result?.result ?? null;
     };
     return {
+      exec: (args: Record<string, unknown>) => proxy("exec", args),
+      bash: (args: Record<string, unknown>) => proxy("exec", args),
+      shell: (args: Record<string, unknown>) => proxy("exec", args),
+      read: (args: Record<string, unknown>) => proxy("read", args),
       db_query: (args: Record<string, unknown>) => proxy("db_query", args),
       db_execute: (args: Record<string, unknown>) => proxy("db_execute", args),
     };

@@ -652,16 +652,80 @@ export default definePluginEntry({
     );
 
     // ── tools.invoke — for rendered apps' Query/Mutation calls ───────────────
-    // SAFETY: openclaw-os-plugin's equivalent shipped `exec` (arbitrary
-    // `sh -c`) and `read` (arbitrary path). That was the worst defect in the
-    // earlier review. Here we expose ONLY db_query and db_execute — both
-    // scoped to per-session SQLite namespaces and (for db_query) further
-    // confined by PRAGMA query_only=ON at the kernel level.
+    // Trust model: this plugin runs on the user's own OpenClaw gateway, on
+    // their own machine, executing tool calls their own agent emitted. The
+    // "exec is dangerous" concern applies to a multi-tenant SaaS where a
+    // backend would hold many users' agent tokens — that's a different layer
+    // (Campfire's hosted web app), which itself never runs anything; it just
+    // relays browser-bridge RPC to this plugin. So allowing `exec` here is
+    // the same trust posture as openclaw-os, and necessary because the
+    // openui-app SKILL.md teaches `Query("exec", { command: "curl ..." })`
+    // as the canonical "fetch external data" pattern. Disallowing it makes
+    // ~all interface-query apps fail.
     //
-    // If a future product need actually requires shell or file reads from
-    // apps, that goes through a NEW explicit tool with an allowlist + UI
-    // consent — not by widening this RPC.
-    const APP_RUNTIME_TOOLS = new Set(["db_query", "db_execute"]);
+    // For a future hosted SaaS deployment of this plugin (multiple users
+    // sharing one gateway), gate exec via a plugin config flag.
+    const APP_RUNTIME_TOOLS = new Set([
+      "db_query",
+      "db_execute",
+      "exec",
+      "bash",
+      "shell",
+      "read",
+    ]);
+
+    const invokeExecTool = async (args: Record<string, unknown>): Promise<unknown> => {
+      const command = typeof args["command"] === "string" ? args["command"] : "";
+      if (!command) throw new Error("exec requires a 'command' argument");
+      const timeoutMs =
+        typeof args["timeout_ms"] === "number" ? args["timeout_ms"] : 30_000;
+      api.logger.info(
+        `[campfire-plugin] invokeTool(exec): command=${command.slice(0, 120)}`,
+      );
+      try {
+        const result = await api.runtime.system.runCommandWithTimeout(
+          ["sh", "-c", command],
+          { timeoutMs, cwd: api.runtime.state.resolveStateDir() },
+        );
+        const stdout = (result.stdout ?? "").trim();
+        const stderr = (result.stderr ?? "").trim();
+        const exitCode = result.code ?? 0;
+        // Auto-parse stdout as JSON so apps get clean data objects — but
+        // only when the output looks like a JSON object or array. Bare
+        // numbers/strings (e.g. `date +%s` → `1777925583`) parse as
+        // primitives, which would replace the result and break Query
+        // bindings like `now.stdout` in openui-lang. Restrict to {…} / […].
+        if (exitCode === 0 && stdout && (stdout[0] === "{" || stdout[0] === "[")) {
+          try {
+            return JSON.parse(stdout);
+          } catch {
+            // not valid JSON — fall through to the raw shape below
+          }
+        }
+        return { stdout, stderr, exitCode };
+      } catch (err: unknown) {
+        const e = err as {
+          stdout?: string;
+          stderr?: string;
+          status?: number;
+          message?: string;
+        };
+        return {
+          stdout: (e.stdout ?? "").trim(),
+          stderr: (e.stderr ?? e.message ?? "").trim(),
+          exitCode: e.status ?? 1,
+        };
+      }
+    };
+
+    const invokeReadTool = async (args: Record<string, unknown>): Promise<unknown> => {
+      const filePath = typeof args["file_path"] === "string" ? args["file_path"] : "";
+      if (!filePath) throw new Error("read requires a 'file_path' argument");
+      api.logger.info(`[campfire-plugin] invokeTool(read): path=${filePath}`);
+      const { readFile } = await import("node:fs/promises");
+      const content = await readFile(filePath, "utf-8");
+      return { content };
+    };
 
     api.registerGatewayMethod(
       "campfire.tools.invoke",
@@ -692,18 +756,33 @@ export default definePluginEntry({
         try {
           const stateDir = api.runtime.state.resolveStateDir();
           let result: unknown;
-          if (toolName === "db_query") {
-            result = await runDbQuery(stateDir, {
-              sql: typeof toolArgs["sql"] === "string" ? toolArgs["sql"] : "",
-              params: toolArgs["params"],
-              namespace: toolArgs["namespace"],
-            });
-          } else {
-            result = await runDbExecute(stateDir, {
-              sql: typeof toolArgs["sql"] === "string" ? toolArgs["sql"] : "",
-              params: toolArgs["params"],
-              namespace: toolArgs["namespace"],
-            });
+          switch (toolName) {
+            case "exec":
+            case "bash":
+            case "shell":
+              result = await invokeExecTool(toolArgs);
+              break;
+            case "read":
+              result = await invokeReadTool(toolArgs);
+              break;
+            case "db_query":
+              result = await runDbQuery(stateDir, {
+                sql: typeof toolArgs["sql"] === "string" ? toolArgs["sql"] : "",
+                params: toolArgs["params"],
+                namespace: toolArgs["namespace"],
+              });
+              break;
+            case "db_execute":
+              result = await runDbExecute(stateDir, {
+                sql: typeof toolArgs["sql"] === "string" ? toolArgs["sql"] : "",
+                params: toolArgs["params"],
+                namespace: toolArgs["namespace"],
+              });
+              break;
+            default:
+              // Caught by the APP_RUNTIME_TOOLS allowlist above, but TypeScript
+              // doesn't know that.
+              throw new Error(`Unsupported tool: ${toolName}`);
           }
           respond(true, { result });
         } catch (e) {
