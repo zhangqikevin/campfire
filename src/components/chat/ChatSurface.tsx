@@ -13,9 +13,8 @@ interface ChatSurfaceProps {
 }
 
 export function ChatSurface({ sessionKey }: ChatSurfaceProps) {
-  const { client, state, missingToken } = useClient();
+  const { state, missingToken } = useClient();
   const { messages, streamingText, isStreaming, sendError, send, abort } = useChatThread({
-    client,
     sessionKey,
   });
 

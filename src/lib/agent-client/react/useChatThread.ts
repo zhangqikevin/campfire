@@ -1,27 +1,16 @@
 "use client";
 
-import { EventType } from "@openuidev/react-headless";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { createAGUIMapper } from "@/lib/agent-client/agui-mapper";
-import type { Client } from "@/lib/agent-client/client";
+import { useCallback, useContext, useEffect, useSyncExternalStore } from "react";
+import { ClientContext } from "@/lib/agent-client/react/ClientProvider";
 import type {
-  AgentEvent,
-  ChatEvent,
-  ChatHistoryMessage,
-  EventFrame,
-} from "@/lib/agent-client/types";
+  ThreadMessage,
+  ThreadSnapshot,
+} from "@/lib/agent-client/react/chat-thread-store";
 
-export interface ThreadMessage {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-}
+export type { ThreadMessage } from "@/lib/agent-client/react/chat-thread-store";
 
 interface UseChatThreadOptions {
-  client: Client | null;
   sessionKey: string;
-  /** Set to true to refetch history (e.g. after a reconnect). */
-  refreshKey?: unknown;
 }
 
 interface UseChatThreadReturn {
@@ -31,148 +20,68 @@ interface UseChatThreadReturn {
   isSending: boolean;
   /** Last error from a send attempt; null on success. */
   sendError: string | null;
-  /** Send the user message and wait for the agent's response to start streaming. */
+  /** Send the user message; agent's reply streams into state. */
   send: (text: string) => Promise<void>;
   abort: () => Promise<void>;
 }
 
-function historyToMessages(history: ChatHistoryMessage[]): ThreadMessage[] {
-  return history
-    .map((m, i) => {
-      const role = typeof m.role === "string" ? m.role : "";
-      const content =
-        typeof m.content === "string"
-          ? m.content
-          : Array.isArray(m.content)
-            ? m.content
-                .map((p) => {
-                  if (!p || typeof p !== "object") return "";
-                  const part = p as { type?: unknown; text?: unknown };
-                  return part.type === "text" && typeof part.text === "string" ? part.text : "";
-                })
-                .join("")
-            : "";
-      const id = typeof m.id === "string" ? m.id : `hist-${i}`;
-      if (role !== "user" && role !== "assistant") return null;
-      return { id, role, content };
-    })
-    .filter((m): m is ThreadMessage => m !== null && m.content.length > 0);
-}
+const EMPTY: ThreadSnapshot = {
+  messages: [],
+  streamingText: "",
+  isStreaming: false,
+  isSending: false,
+  sendError: null,
+  historyLoaded: false,
+};
 
-export function useChatThread({
-  client,
-  sessionKey,
-  refreshKey,
-}: UseChatThreadOptions): UseChatThreadReturn {
-  const [messages, setMessages] = useState<ThreadMessage[]>([]);
-  const [streamingText, setStreamingText] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [isSending, setIsSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
+/**
+ * Chat thread state hook. Backed by `ChatThreadStore` (owned by
+ * `ClientProvider`) so messages + streaming progress survive tab switches
+ * inside the binding workspace — Apps / Artifacts / Crons tab can be
+ * browsed while a run streams in the background, and switching back to
+ * Chat shows everything that arrived.
+ */
+export function useChatThread({ sessionKey }: UseChatThreadOptions): UseChatThreadReturn {
+  const { chatStore } = useContext(ClientContext);
 
-  const streamingIdRef = useRef<string | null>(null);
+  const snapshot = useSyncExternalStore<ThreadSnapshot>(
+    useCallback(
+      (onChange) => {
+        if (!chatStore) return () => undefined;
+        return chatStore.subscribe(sessionKey, onChange);
+      },
+      [chatStore, sessionKey],
+    ),
+    () => (chatStore ? chatStore.getSnapshot(sessionKey) : EMPTY),
+    () => EMPTY,
+  );
 
-  // Load history when client / session changes.
+  // Load chat.history once per session; idempotent across remounts.
   useEffect(() => {
-    if (!client) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const history = await client.loadHistory(sessionKey);
-        if (cancelled) return;
-        setMessages(historyToMessages(history));
-      } catch (err) {
-        if (cancelled) return;
-        console.warn("[campfire:chat] history load failed:", err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [client, sessionKey, refreshKey]);
-
-  // Subscribe to gateway events for this session, run them through the AGUI
-  // mapper, and reflect into local state.
-  useEffect(() => {
-    if (!client) return;
-
-    let assistantBuffer = "";
-
-    const mapper = createAGUIMapper((event) => {
-      const type = event["type"];
-      if (type === EventType.TEXT_MESSAGE_START) {
-        const id = typeof event["messageId"] === "string" ? event["messageId"] : crypto.randomUUID();
-        streamingIdRef.current = id;
-        assistantBuffer = "";
-        setIsStreaming(true);
-        setStreamingText("");
-        return;
-      }
-      if (type === EventType.TEXT_MESSAGE_CONTENT) {
-        const delta = typeof event["delta"] === "string" ? event["delta"] : "";
-        if (!delta) return;
-        assistantBuffer += delta;
-        setStreamingText(assistantBuffer);
-        return;
-      }
-      if (type === EventType.TEXT_MESSAGE_END) {
-        const id = streamingIdRef.current ?? crypto.randomUUID();
-        const text = assistantBuffer;
-        if (text.length > 0) {
-          setMessages((prev) => [...prev, { id, role: "assistant", content: text }]);
-        }
-        streamingIdRef.current = null;
-        assistantBuffer = "";
-        setStreamingText("");
-        return;
-      }
-      if (type === EventType.RUN_FINISHED || type === EventType.RUN_ERROR) {
-        setIsStreaming(false);
-        setIsSending(false);
-        if (type === EventType.RUN_ERROR && typeof event["message"] === "string") {
-          setSendError(event["message"] as string);
-        }
-      }
-    });
-
-    const off = client.onEvent((frame: EventFrame) => {
-      const payload = frame.payload as { sessionKey?: string } | undefined;
-      if (payload?.sessionKey && payload.sessionKey !== sessionKey) return;
-
-      if (frame.event === "agent") {
-        mapper.onAgentEvent(payload as unknown as AgentEvent);
-      } else if (frame.event === "chat") {
-        mapper.onChatEvent(payload as unknown as ChatEvent);
-      }
-    });
-
-    return off;
-  }, [client, sessionKey]);
+    if (!chatStore) return;
+    void chatStore.ensureHistoryLoaded(sessionKey);
+  }, [chatStore, sessionKey]);
 
   const send = useCallback(
     async (text: string) => {
-      if (!client || !text.trim()) return;
-      const trimmed = text.trim();
-      const userId = crypto.randomUUID();
-      setMessages((prev) => [...prev, { id: userId, role: "user", content: trimmed }]);
-      setSendError(null);
-      setIsSending(true);
-      setIsStreaming(true);
-      try {
-        await client.sendChat(sessionKey, trimmed);
-      } catch (err) {
-        setIsSending(false);
-        setIsStreaming(false);
-        setSendError(err instanceof Error ? err.message : "Failed to send");
-      }
+      if (!chatStore) return;
+      await chatStore.send(sessionKey, text);
     },
-    [client, sessionKey],
+    [chatStore, sessionKey],
   );
 
   const abort = useCallback(async () => {
-    if (!client) return;
-    await client.abortChat(sessionKey);
-  }, [client, sessionKey]);
+    if (!chatStore) return;
+    await chatStore.abort(sessionKey);
+  }, [chatStore, sessionKey]);
 
-  return { messages, streamingText, isStreaming, isSending, sendError, send, abort };
+  return {
+    messages: snapshot.messages,
+    streamingText: snapshot.streamingText,
+    isStreaming: snapshot.isStreaming,
+    isSending: snapshot.isSending,
+    sendError: snapshot.sendError,
+    send,
+    abort,
+  };
 }
