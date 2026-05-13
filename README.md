@@ -2,7 +2,11 @@
 
 A multi-tenant SaaS workspace for the agents you already run. You bring an OpenClaw gateway or a Hermes endpoint; Campfire gives you a chat UI that renders the agent's output as live, interactive components — charts, tables, dashboards — via [OpenUI Lang](https://openui.com).
 
-This is the auth-only MVP slice. Agent binding, OpenUI rendering, persistent apps/artifacts, and the rest come next.
+Pairs with [`@campfire/openclaw-plugin`](./plugin/README.md) — the OpenClaw plugin that exposes the gateway-side tools and RPCs Campfire reads from. One-liner install for the plugin:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zhangqikevin/campfire/main/plugin/install.sh | bash
+```
 
 ## Architecture in one diagram
 

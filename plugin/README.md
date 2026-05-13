@@ -34,28 +34,43 @@ Designed deliberately as a slimmer, safer counterpart to thesysdev's
 
 ## Install
 
-You need `openclaw` CLI ≥ 2026.4.12, Node 22.5+, pnpm.
+You need `openclaw` CLI ≥ 2026.4.12 and Node 22.5+. pnpm is auto-bootstrapped
+by the installer if missing.
+
+**One-liner** (macOS / Linux / WSL2):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zhangqikevin/campfire/main/plugin/install.sh | bash
+```
+
+That pulls just the `plugin/` subdirectory from this repo, builds the
+esbuild bundle, registers it with your local OpenClaw, restarts the
+gateway, and verifies. Roughly 30 seconds, mostly `pnpm install`.
+
+Uninstall:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zhangqikevin/campfire/main/plugin/install.sh | bash -s -- uninstall
+```
+
+**Manual** (if you've cloned this repo already):
 
 ```bash
 cd plugin
 pnpm install
 pnpm build
-
-# From the repo root (where `openclaw` can see the directory):
-openclaw plugins install ./plugin --force
+openclaw plugins install "$(pwd)" --force
 openclaw gateway restart
 ```
 
-To verify it's loaded:
+Verify:
 
 ```bash
 openclaw plugins list --json | jq '.[] | select(.id == "campfire-plugin")'
 ```
 
-You should see `status: "enabled"`.
-
-Then in Campfire, bind this gateway and the Apps / Artifacts panels will
-work.
+You should see `status: "enabled"`. Then in Campfire, bind this gateway and
+the Apps / Artifacts panels will start working.
 
 ## Layout
 
