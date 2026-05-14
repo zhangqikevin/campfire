@@ -25,6 +25,20 @@ export async function requireTenantId(): Promise<string> {
   return tenantId;
 }
 
+/**
+ * Resolves the current user id, or redirects to /login. Use for reads that
+ * are org-wide (e.g. Team Apps) — they need an authenticated caller but no
+ * tenant scope.
+ */
+export async function requireUserId(): Promise<string> {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) {
+    redirect("/login");
+  }
+  return userId;
+}
+
 export interface AdminSession {
   userId: string;
   tenantId: string;
