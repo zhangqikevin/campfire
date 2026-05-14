@@ -3,7 +3,8 @@
 import { createContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Client } from "@/lib/agent-client/client";
 import { ConnectionState } from "@/lib/agent-client/types";
-import { getToken } from "@/lib/agent-bindings/token-store";
+import { getProvisionedToken } from "@/lib/agent-bindings/actions";
+import { getToken, saveToken } from "@/lib/agent-bindings/token-store";
 import { ChatThreadStore } from "@/lib/agent-client/react/chat-thread-store";
 
 interface ClientContextValue {
@@ -40,8 +41,26 @@ export function ClientProvider({ bindingId, url, children }: ClientProviderProps
     let cancelled = false;
 
     (async () => {
-      const token = await getToken(bindingId);
+      let token = await getToken(bindingId);
       if (cancelled) return;
+
+      // First-login activation: IDB empty but admin pre-provisioned this binding
+      // with an encrypted token. Fetch it server-side, then stash to IDB so the
+      // subsequent loads in this browser go straight through getToken().
+      if (!token) {
+        try {
+          const result = await getProvisionedToken(bindingId);
+          if (cancelled) return;
+          if (result.ok) {
+            await saveToken(bindingId, result.token);
+            if (cancelled) return;
+            token = result.token;
+          }
+        } catch {
+          // fall through to missing-token UX
+        }
+      }
+
       if (!token) {
         setMissingToken(true);
         setState(ConnectionState.AUTH_FAILED);

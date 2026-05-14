@@ -3,6 +3,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireTenantId } from "@/lib/auth/session";
+import { decryptToken } from "@/lib/auth/encryption";
 import { createBindingSchema, type CreateBindingInput } from "@/lib/agent-bindings/schemas";
 import { db } from "@/lib/db";
 import { agentBindings, type AgentBinding } from "@/lib/db/schema";
@@ -73,6 +74,35 @@ export async function deleteBindingAction(id: string): Promise<{ ok: boolean }> 
     .where(and(eq(agentBindings.id, id), eq(agentBindings.tenantId, tenantId)));
   revalidatePath("/agents");
   return { ok: true };
+}
+
+/**
+ * First-login activation: hand the admin-provisioned token (encrypted at rest)
+ * to the user's browser exactly when their IDB is empty. The server keeps the
+ * ciphertext on the row so the same user can re-fetch on a different browser
+ * or after clearing storage — the trust model is that any authenticated owner
+ * of this tenant already controls the underlying gateway.
+ */
+export async function getProvisionedToken(
+  bindingId: string,
+): Promise<{ ok: true; token: string } | { ok: false; reason: "not_found" | "not_provisioned" }> {
+  const tenantId = await requireTenantId();
+  const [row] = await db
+    .select({
+      tokenCiphertext: agentBindings.tokenCiphertext,
+      tokenNonce: agentBindings.tokenNonce,
+    })
+    .from(agentBindings)
+    .where(and(eq(agentBindings.id, bindingId), eq(agentBindings.tenantId, tenantId)))
+    .limit(1);
+
+  if (!row) return { ok: false, reason: "not_found" };
+  if (!row.tokenCiphertext || !row.tokenNonce) {
+    return { ok: false, reason: "not_provisioned" };
+  }
+
+  const token = decryptToken({ ciphertext: row.tokenCiphertext, nonce: row.tokenNonce });
+  return { ok: true, token };
 }
 
 export async function markBindingVerifiedAction(id: string): Promise<{ ok: boolean }> {
