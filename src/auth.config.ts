@@ -23,7 +23,6 @@ export const authConfig: NextAuthConfig = {
       const isPublic =
         path === "/" ||
         path === "/login" ||
-        path === "/signup" ||
         path.startsWith("/api/auth/");
 
       if (!isPublic && !isAuthed) {
@@ -39,8 +38,7 @@ export const authConfig: NextAuthConfig = {
         return Response.redirect(new URL("/dashboard", nextUrl));
       }
 
-      const isAuthPage = path === "/login" || path === "/signup";
-      if (isAuthPage && isAuthed) {
+      if (path === "/login" && isAuthed) {
         return Response.redirect(new URL("/dashboard", nextUrl));
       }
 

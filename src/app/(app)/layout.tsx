@@ -29,6 +29,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               >
                 Agents
               </Link>
+              {session.user.role === "admin" ? (
+                <Link
+                  href="/admin"
+                  className="rounded-md px-2 py-1 text-sm text-fg-muted hover:bg-bg-inset hover:text-fg"
+                >
+                  Admin
+                </Link>
+              ) : null}
             </nav>
           </div>
           <div className="flex items-center gap-3">

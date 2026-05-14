@@ -16,10 +16,7 @@ export default async function HomePage() {
         </div>
         <nav className="flex items-center gap-2">
           <Link href="/login">
-            <Button variant="ghost">Log in</Button>
-          </Link>
-          <Link href="/signup">
-            <Button variant="primary">Sign up</Button>
+            <Button variant="primary">Log in</Button>
           </Link>
         </nav>
       </header>
@@ -35,12 +32,13 @@ export default async function HomePage() {
           Hermes at an endpoint you control. Chat with it, and the answers come back as
           interactive charts, tables, and dashboards instead of walls of text.
         </p>
+        <p className="mt-6 max-w-xl text-sm text-fg-subtle">
+          Campfire is an organization-internal workspace — your admin will create your account
+          and pre-bind your gateway.
+        </p>
         <div className="mt-8 flex flex-wrap gap-3">
-          <Link href="/signup">
-            <Button variant="primary">Create an account</Button>
-          </Link>
           <Link href="/login">
-            <Button variant="secondary">I already have one</Button>
+            <Button variant="primary">Log in</Button>
           </Link>
         </div>
       </section>

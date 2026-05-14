@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState } from "react";
 import { loginAction, type AuthFormState } from "@/lib/auth/actions";
 import { Button } from "@/components/ui/Button";
@@ -54,13 +53,6 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
       <Button type="submit" disabled={isPending} className="w-full">
         {isPending ? "Logging in…" : "Log in"}
       </Button>
-
-      <p className="text-center text-sm text-fg-muted">
-        New here?{" "}
-        <Link href="/signup" className="font-medium text-fg underline underline-offset-2">
-          Create an account
-        </Link>
-      </p>
     </form>
   );
 }
