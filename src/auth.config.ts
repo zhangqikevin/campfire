@@ -16,6 +16,7 @@ export const authConfig: NextAuthConfig = {
     authorized({ auth, request: { nextUrl } }) {
       const isAuthed = !!auth?.user;
       const path = nextUrl.pathname;
+      const role = auth?.user?.role;
 
       // Deny-by-default: explicit public allowlist, everything else needs auth.
       // New app routes are protected without anyone remembering to update this.
@@ -31,6 +32,13 @@ export const authConfig: NextAuthConfig = {
         return Response.redirect(target);
       }
 
+      // /admin/* requires the `admin` role. Defense-in-depth — server actions
+      // and pages also call requireAdminId(), but blocking at the middleware
+      // layer means a member can't even GET /admin/anything.
+      if (path.startsWith("/admin") && isAuthed && role !== "admin") {
+        return Response.redirect(new URL("/dashboard", nextUrl));
+      }
+
       const isAuthPage = path === "/login" || path === "/signup";
       if (isAuthPage && isAuthed) {
         return Response.redirect(new URL("/dashboard", nextUrl));
@@ -42,14 +50,17 @@ export const authConfig: NextAuthConfig = {
       if (user) {
         token["userId"] = user.id ?? "";
         token["tenantId"] = user.tenantId ?? "";
+        token["role"] = user.role ?? "member";
       }
       return token;
     },
     session({ session, token }) {
       const userId = typeof token["userId"] === "string" ? token["userId"] : "";
       const tenantId = typeof token["tenantId"] === "string" ? token["tenantId"] : "";
+      const role = token["role"] === "admin" ? "admin" : "member";
       if (userId) session.user.id = userId;
       if (tenantId) session.user.tenantId = tenantId;
+      session.user.role = role;
       return session;
     },
   },

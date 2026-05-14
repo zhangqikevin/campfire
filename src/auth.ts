@@ -26,6 +26,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             email: users.email,
             passwordHash: users.passwordHash,
             tenantId: users.tenantId,
+            role: users.role,
           })
           .from(users)
           .where(eq(users.emailNormalized, normalized))
@@ -40,6 +41,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           id: user.id,
           email: user.email,
           tenantId: user.tenantId,
+          role: user.role,
         };
       },
     }),

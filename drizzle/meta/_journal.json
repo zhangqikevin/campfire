@@ -15,6 +15,20 @@
       "when": 1778646621595,
       "tag": "0001_thick_sleepwalker",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778729068561,
+      "tag": "0002_strong_shooting_star",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778729200000,
+      "tag": "0003_promote_oskiwi_admin",
+      "breakpoints": true
     }
   ]
 }
