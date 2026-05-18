@@ -16,7 +16,7 @@ export default async function WorkspaceArtifactsPage() {
       </header>
       <ArtifactsListView
         bindingId={binding.id}
-        detailHref={(id) => `/workspace/artifacts/${id}`}
+        detailHrefPrefix="/workspace/artifacts"
       />
     </div>
   );

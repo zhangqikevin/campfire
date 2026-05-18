@@ -16,11 +16,15 @@ interface AppSummary {
 
 interface AppsListViewProps {
   bindingId: string;
-  detailHref?: (appId: string) => string;
+  /** Prefix for per-app detail links. Defaults to /agents/[bindingId]/apps;
+   *  workspace passes /workspace/apps so URLs stay consistent with where the
+   *  user clicked. Encoded as a string (not a function) because Next.js
+   *  forbids passing functions across the Server→Client boundary. */
+  detailHrefPrefix?: string;
 }
 
-export function AppsListView({ bindingId, detailHref }: AppsListViewProps) {
-  const hrefFor = detailHref ?? ((appId: string) => `/agents/${bindingId}/apps/${appId}`);
+export function AppsListView({ bindingId, detailHrefPrefix }: AppsListViewProps) {
+  const prefix = detailHrefPrefix ?? `/agents/${bindingId}/apps`;
   const { state } = useClient();
   const { data, status, error, refetch } = useGatewayQuery<{ apps?: AppSummary[] }>(
     "campfire.apps.list",
@@ -75,7 +79,7 @@ export function AppsListView({ bindingId, detailHref }: AppsListViewProps) {
       {apps.map((app) => (
         <li key={app.id}>
           <Link
-            href={hrefFor(app.id)}
+            href={`${prefix}/${app.id}`}
             className="flex items-center justify-between p-4 hover:bg-bg-inset/60"
           >
             <div>

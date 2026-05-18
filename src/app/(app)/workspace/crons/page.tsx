@@ -16,7 +16,7 @@ export default async function WorkspaceCronsPage() {
       </header>
       <CronsListView
         bindingId={binding.id}
-        detailHref={(id) => `/workspace/crons/${id}`}
+        detailHrefPrefix="/workspace/crons"
       />
     </div>
   );

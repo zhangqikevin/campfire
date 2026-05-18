@@ -15,11 +15,11 @@ interface ArtifactSummary {
 
 interface ArtifactsListViewProps {
   bindingId: string;
-  detailHref?: (artifactId: string) => string;
+  detailHrefPrefix?: string;
 }
 
-export function ArtifactsListView({ bindingId, detailHref }: ArtifactsListViewProps) {
-  const hrefFor = detailHref ?? ((id: string) => `/agents/${bindingId}/artifacts/${id}`);
+export function ArtifactsListView({ bindingId, detailHrefPrefix }: ArtifactsListViewProps) {
+  const prefix = detailHrefPrefix ?? `/agents/${bindingId}/artifacts`;
   const { state } = useClient();
   const { data, status, error, refetch } = useGatewayQuery<{ artifacts?: ArtifactSummary[] }>(
     "campfire.artifacts.list",
@@ -75,7 +75,7 @@ export function ArtifactsListView({ bindingId, detailHref }: ArtifactsListViewPr
       {artifacts.map((a) => (
         <li key={a.id}>
           <Link
-            href={hrefFor(a.id)}
+            href={`${prefix}/${a.id}`}
             className="flex items-center justify-between p-4 hover:bg-bg-inset/60"
           >
             <div>

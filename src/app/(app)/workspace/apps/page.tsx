@@ -18,13 +18,13 @@ export default async function WorkspaceAppsPage() {
       </header>
       <TeamAppsSection
         bindingId={binding.id}
-        detailHref={(id) => `/workspace/team-apps/${id}`}
+        detailHrefPrefix="/workspace/team-apps"
       />
       <section className="space-y-2">
         <h3 className="text-sm font-semibold">Personal Apps</h3>
         <AppsListView
           bindingId={binding.id}
-          detailHref={(id) => `/workspace/apps/${id}`}
+          detailHrefPrefix="/workspace/apps"
         />
       </section>
     </div>
