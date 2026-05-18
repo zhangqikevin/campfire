@@ -16,7 +16,7 @@ export default async function BindingLayout({ params, children }: BindingLayoutP
 
   return (
     <BindingScope bindingId={binding.id} url={binding.url}>
-      <div className="space-y-6">
+      <div className="mx-auto max-w-5xl space-y-6">
         <header className="space-y-1">
           <div className="flex items-center gap-2 text-xs text-fg-muted">
             <Link href="/agents" className="hover:text-fg">

@@ -10,7 +10,7 @@ export default async function AgentsPage() {
   const bindings = await listBindingsForTenant();
 
   return (
-    <div className="space-y-10">
+    <div className="mx-auto max-w-5xl space-y-10">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Agents</h1>
         <p className="text-sm text-fg-muted">
