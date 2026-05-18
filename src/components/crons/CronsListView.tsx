@@ -8,6 +8,7 @@ import { cronStatusBadge, humanFrequency, relTime, type CronJobRecord } from "@/
 
 interface CronsListViewProps {
   bindingId: string;
+  detailHref?: (cronId: string) => string;
 }
 
 const TONE_CLASS: Record<"ok" | "warn" | "muted" | "danger", string> = {
@@ -17,7 +18,8 @@ const TONE_CLASS: Record<"ok" | "warn" | "muted" | "danger", string> = {
   danger: "bg-danger/15 text-danger",
 };
 
-export function CronsListView({ bindingId }: CronsListViewProps) {
+export function CronsListView({ bindingId, detailHref }: CronsListViewProps) {
+  const hrefFor = detailHref ?? ((id: string) => `/agents/${bindingId}/crons/${id}`);
   const { state } = useClient();
   const { data, status, error, refetch } = useGatewayQuery<{ jobs?: CronJobRecord[] }>(
     "cron.list",
@@ -70,7 +72,7 @@ export function CronsListView({ bindingId }: CronsListViewProps) {
         return (
           <li key={job.id}>
             <Link
-              href={`/agents/${bindingId}/crons/${job.id}`}
+              href={hrefFor(job.id)}
               className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-4 p-4 hover:bg-bg-inset/60"
             >
               <div className="min-w-0">

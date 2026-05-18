@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 
 export default async function HomePage() {
   const session = await auth();
-  if (session?.user) redirect("/dashboard");
+  if (session?.user) redirect("/workspace");
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-3xl flex-col px-6">

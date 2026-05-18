@@ -16,9 +16,11 @@ interface AppSummary {
 
 interface AppsListViewProps {
   bindingId: string;
+  detailHref?: (appId: string) => string;
 }
 
-export function AppsListView({ bindingId }: AppsListViewProps) {
+export function AppsListView({ bindingId, detailHref }: AppsListViewProps) {
+  const hrefFor = detailHref ?? ((appId: string) => `/agents/${bindingId}/apps/${appId}`);
   const { state } = useClient();
   const { data, status, error, refetch } = useGatewayQuery<{ apps?: AppSummary[] }>(
     "campfire.apps.list",
@@ -73,7 +75,7 @@ export function AppsListView({ bindingId }: AppsListViewProps) {
       {apps.map((app) => (
         <li key={app.id}>
           <Link
-            href={`/agents/${bindingId}/apps/${app.id}`}
+            href={hrefFor(app.id)}
             className="flex items-center justify-between p-4 hover:bg-bg-inset/60"
           >
             <div>

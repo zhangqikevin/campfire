@@ -3,9 +3,14 @@ import { listTeamAppsForMember } from "@/lib/team-apps/actions";
 
 interface TeamAppsSectionProps {
   bindingId: string;
+  /** Per-app href. Defaults to /agents/[bindingId]/team-apps/[id]; pass
+   *  /workspace/team-apps/[id] from /workspace routes so the URL stays
+   *  consistent with where the user actually clicked. */
+  detailHref?: (appId: string) => string;
 }
 
-export async function TeamAppsSection({ bindingId }: TeamAppsSectionProps) {
+export async function TeamAppsSection({ bindingId, detailHref }: TeamAppsSectionProps) {
+  const hrefFor = detailHref ?? ((appId: string) => `/agents/${bindingId}/team-apps/${appId}`);
   const apps = await listTeamAppsForMember();
   if (apps.length === 0) return null;
 
@@ -21,7 +26,7 @@ export async function TeamAppsSection({ bindingId }: TeamAppsSectionProps) {
         {apps.map((app) => (
           <li key={app.id}>
             <Link
-              href={`/agents/${bindingId}/team-apps/${app.id}`}
+              href={hrefFor(app.id)}
               className="flex items-center justify-between p-4 hover:bg-bg-inset/60"
             >
               <div className="min-w-0">

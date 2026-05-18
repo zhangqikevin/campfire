@@ -34,7 +34,7 @@ export async function loginAction(
     return { ...INITIAL_STATE, errors: fieldErrors(parsed.error.flatten()) };
   }
 
-  const redirectTo = (formData.get("redirectTo") as string | null) ?? "/dashboard";
+  const redirectTo = (formData.get("redirectTo") as string | null) ?? "/workspace";
 
   try {
     await signIn("credentials", {

@@ -38,8 +38,10 @@ export const authConfig: NextAuthConfig = {
         return Response.redirect(new URL("/dashboard", nextUrl));
       }
 
+      // Default landing after login → workspace, where members spend ~all
+      // their time. Admins can still navigate to /admin from the global nav.
       if (path === "/login" && isAuthed) {
-        return Response.redirect(new URL("/dashboard", nextUrl));
+        return Response.redirect(new URL("/workspace", nextUrl));
       }
 
       return true;

@@ -155,6 +155,11 @@ export class GatewaySocket {
         this.opts.onAuthFailed();
         return;
       }
+      // Without surfacing the gateway's error, every non-fatal `connect`
+      // failure looks identical in the UI (silent reconnect → UNREACHABLE
+      // after 6 retries). Log the full error so unknown error codes surface
+      // in the console — the only way for users to report what went wrong.
+      warn("connect rejected:", error);
       this.closeWs();
       this.scheduleReconnect();
       return;
