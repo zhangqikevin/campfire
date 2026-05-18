@@ -12,7 +12,14 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
               <div className="h-5 w-5 rounded-sm bg-accent" aria-hidden />
               <span className="text-sm font-semibold tracking-tight">Campfire</span>
             </Link>
-            <span className="text-xs text-fg-muted">local mode</span>
+            <span className="text-xs text-fg-muted">
+              local mode
+              {process.env["NEXT_PUBLIC_CAMPFIRE_VERSION"] ? (
+                <span className="ml-2 font-mono text-fg-subtle">
+                  {process.env["NEXT_PUBLIC_CAMPFIRE_VERSION"]}
+                </span>
+              ) : null}
+            </span>
           </div>
         </header>
         <div className="mx-auto max-w-5xl space-y-6 px-6 py-6">

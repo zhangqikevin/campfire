@@ -1,8 +1,27 @@
+import { execSync } from "node:child_process";
 import type { NextConfig } from "next";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Version label shown in the workspace header so users can verify which
+// commit is actually deployed. install.sh sets CAMPFIRE_VERSION when it
+// installs into a gateway (degit strips .git so we can't read it locally);
+// in this repo we just read the current short SHA at build time.
+function computeVersion(): string {
+  const fromEnv = process.env["CAMPFIRE_VERSION"];
+  if (fromEnv) return fromEnv;
+  try {
+    return execSync("git rev-parse --short HEAD", {
+      cwd: __dirname,
+      encoding: "utf-8",
+    }).trim();
+  } catch {
+    return "dev";
+  }
+}
+const version = computeVersion();
 
 // This is the "local mode" Next.js app: statically exported, bundled into
 // campfire-plugin, and served by the plugin at /plugins/campfire/ on the
@@ -24,6 +43,9 @@ const nextConfig: NextConfig = {
   output: "export",
   basePath,
   assetPrefix: basePath,
+  env: {
+    NEXT_PUBLIC_CAMPFIRE_VERSION: version,
+  },
   reactStrictMode: true,
   images: { unoptimized: true },
   // Trailing slash so directory-style URLs resolve cleanly when served as

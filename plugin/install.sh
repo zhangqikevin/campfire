@@ -143,7 +143,22 @@ build_local_ui() {
 
   # Pass through CAMPFIRE_BASE_PATH if we computed one — next.config.ts reads
   # it. Empty string falls back to the default `/plugins/campfire`.
-  ( cd "$UI_DIR" && CAMPFIRE_BASE_PATH="$CAMPFIRE_BASE_PATH" pnpm build ) \
+  #
+  # CAMPFIRE_VERSION: short SHA of the main branch we just pulled. degit
+  # strips .git so next.config.ts can't compute this on its own — fetch from
+  # the GitHub API. Failure is non-fatal; we just show no version.
+  local version
+  version=$(curl -fsSL "https://api.github.com/repos/$REPO/commits/main" 2>/dev/null \
+    | sed -n 's/.*"sha": *"\([0-9a-f]\{7,40\}\)".*/\1/p' \
+    | head -1 \
+    | cut -c1-7) || version=""
+  if [[ -n "$version" ]]; then
+    log "Build version label: $version"
+  fi
+  ( cd "$UI_DIR" \
+      && CAMPFIRE_BASE_PATH="$CAMPFIRE_BASE_PATH" \
+         CAMPFIRE_VERSION="$version" \
+         pnpm build ) \
     || fatal "local-ui build failed. See output above."
 
   [[ -d "$UI_DIR/out" ]] || fatal "local-ui build did not produce out/."
