@@ -16,7 +16,7 @@ function CronFromSearch() {
       <Link href="/workspace/crons/" className="text-xs text-fg-muted hover:text-fg">
         ← Crons
       </Link>
-      <CronDetailView cronId={id} />
+      <CronDetailView cronId={id} listHref="/workspace/crons/" />
     </div>
   );
 }

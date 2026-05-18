@@ -1,7 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
+import {
+  CronScheduleEditor,
+  type SchedulePatch,
+} from "@/components/crons/CronScheduleEditor";
 import { useClient } from "@/lib/agent-client/react/useClient";
 import { useGatewayQuery } from "@/lib/agent-client/react/useGatewayQuery";
 import { ConnectionState } from "@/lib/agent-client/types";
@@ -15,6 +20,10 @@ import {
 
 interface CronDetailViewProps {
   cronId: string;
+  /** Where to land after a successful delete. Required because this component
+   *  is shared between SaaS (/agents/:bindingId/crons) and local-ui
+   *  (/workspace/crons/) which have different parent routes. */
+  listHref: string;
 }
 
 const TONE_CLASS: Record<"ok" | "warn" | "muted" | "danger", string> = {
@@ -24,7 +33,8 @@ const TONE_CLASS: Record<"ok" | "warn" | "muted" | "danger", string> = {
   danger: "bg-danger/15 text-danger",
 };
 
-export function CronDetailView({ cronId }: CronDetailViewProps) {
+export function CronDetailView({ cronId, listHref }: CronDetailViewProps) {
+  const router = useRouter();
   const { client, state } = useClient();
   const { data: jobsData, status: jobsStatus, refetch: refetchJobs } = useGatewayQuery<{
     jobs?: CronJobRecord[];
@@ -35,6 +45,10 @@ export function CronDetailView({ cronId }: CronDetailViewProps) {
 
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
+  const [toggling, setToggling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   if (state !== ConnectionState.CONNECTED && state !== ConnectionState.CONNECTING) {
     return <p className="text-sm text-fg-muted">Not connected.</p>;
@@ -70,6 +84,41 @@ export function CronDetailView({ cronId }: CronDetailViewProps) {
     }
   }
 
+  async function handleTogglePause() {
+    if (!client || !job) return;
+    setActionError(null);
+    setToggling(true);
+    try {
+      await client.request("cron.update", { id: cronId, enabled: !job.enabled });
+      refetchJobs();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to toggle pause");
+    } finally {
+      setToggling(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!client) return;
+    if (!confirm(`Delete cron "${job?.name || cronId}"? This cannot be undone.`)) return;
+    setActionError(null);
+    setDeleting(true);
+    try {
+      await client.request("cron.remove", { id: cronId });
+      router.push(listHref);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to delete");
+      setDeleting(false);
+    }
+  }
+
+  async function handleSaveSchedule(patch: SchedulePatch) {
+    if (!client) throw new Error("Not connected");
+    await client.request("cron.update", { id: cronId, schedule: patch });
+    setEditorOpen(false);
+    refetchJobs();
+  }
+
   const message = job.payload?.message ?? job.prompt ?? "";
 
   return (
@@ -89,15 +138,43 @@ export function CronDetailView({ cronId }: CronDetailViewProps) {
           ) : null}
           <p className="mt-1 font-mono text-xs text-fg-subtle">{job.id}</p>
         </div>
-        <Button onClick={handleRunNow} disabled={running} variant="secondary">
-          {running ? "Triggering…" : "Run now"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={handleRunNow} disabled={running} variant="secondary">
+            {running ? "Triggering…" : "Run now"}
+          </Button>
+          <Button
+            onClick={handleTogglePause}
+            disabled={toggling || deleting}
+            variant="ghost"
+          >
+            {toggling ? "…" : job.enabled ? "Pause" : "Resume"}
+          </Button>
+          <Button onClick={() => setEditorOpen(true)} disabled={deleting} variant="ghost">
+            Edit schedule
+          </Button>
+          <Button onClick={handleDelete} disabled={deleting} variant="ghost">
+            {deleting ? "Deleting…" : "Delete"}
+          </Button>
+        </div>
       </div>
 
       {runError ? (
         <p className="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
           {runError}
         </p>
+      ) : null}
+      {actionError ? (
+        <p className="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+          {actionError}
+        </p>
+      ) : null}
+
+      {editorOpen ? (
+        <CronScheduleEditor
+          job={job}
+          onSave={handleSaveSchedule}
+          onClose={() => setEditorOpen(false)}
+        />
       ) : null}
 
       <section className="grid grid-cols-2 gap-4 rounded-lg border border-border bg-bg-subtle p-4 text-sm">

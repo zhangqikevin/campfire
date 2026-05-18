@@ -15,7 +15,7 @@ export default async function CronDetailPage({ params }: PageProps) {
       >
         ← Crons
       </Link>
-      <CronDetailView cronId={cronId} />
+      <CronDetailView cronId={cronId} listHref={`/agents/${bindingId}/crons`} />
     </div>
   );
 }
