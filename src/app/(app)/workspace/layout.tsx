@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BindingScope } from "@/components/agents/BindingScope";
-import { WorkspaceNav } from "@/components/workspace/WorkspaceNav";
+import { WorkspaceChatPane } from "@/components/workspace/WorkspaceChatPane";
+import { WorkspaceSideNav } from "@/components/workspace/WorkspaceSideNav";
 import { getPrimaryBindingForCurrentUser } from "@/lib/agent-bindings/server";
 
 export default async function WorkspaceLayout({
@@ -23,15 +24,23 @@ export default async function WorkspaceLayout({
     );
   }
 
+  // Three-column layout. The left column is a persistent nav; the middle
+  // column always shows the chat (so the WS connection + thread state survive
+  // tab switches in the right column); the right column shows whatever
+  // /workspace/<tab>/page.tsx renders.
   return (
     <BindingScope bindingId={binding.id} url={binding.url}>
-      <div className="space-y-6">
-        <header className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Workspace</h1>
-          <p className="font-mono text-xs text-fg-subtle">{binding.url}</p>
-        </header>
-        <WorkspaceNav />
-        <div>{children}</div>
+      <div className="space-y-2">
+        <p className="font-mono text-xs text-fg-subtle">{binding.url}</p>
+        <div className="grid grid-cols-[176px_minmax(0,1fr)_minmax(0,1fr)] gap-6">
+          <aside>
+            <WorkspaceSideNav />
+          </aside>
+          <section className="min-w-0">
+            <WorkspaceChatPane />
+          </section>
+          <section className="min-w-0">{children}</section>
+        </div>
       </div>
     </BindingScope>
   );

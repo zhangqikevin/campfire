@@ -7,13 +7,7 @@ export default async function WorkspaceArtifactsPage() {
   if (!binding) notFound();
   return (
     <div className="space-y-4">
-      <header>
-        <h2 className="text-base font-semibold">Artifacts</h2>
-        <p className="text-sm text-fg-muted">
-          Durable markdown documents the agent saved via{" "}
-          <code className="font-mono">create_markdown_artifact</code>.
-        </p>
-      </header>
+      <h2 className="text-base font-semibold">Artifacts</h2>
       <ArtifactsListView
         bindingId={binding.id}
         detailHrefPrefix="/workspace/artifacts"
