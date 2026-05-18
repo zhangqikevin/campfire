@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ChatPasswordGate } from "@local/components/ChatPasswordGate";
 
 const TABS: Array<{ label: string; href: string; match: string }> = [
-  { label: "Chat", href: "/workspace/chat/", match: "/workspace/chat" },
   { label: "Apps", href: "/workspace/apps/", match: "/workspace/apps" },
   { label: "Artifacts", href: "/workspace/artifacts/", match: "/workspace/artifacts" },
   { label: "Crons", href: "/workspace/crons/", match: "/workspace/cron" },
 ];
+
+const CHAT_MATCH = "/workspace/chat";
 
 export function LocalNav() {
   const pathname = usePathname() ?? "";
@@ -28,6 +30,7 @@ export function LocalNav() {
           </Link>
         );
       })}
+      <ChatPasswordGate active={pathname.startsWith(CHAT_MATCH)} />
     </nav>
   );
 }

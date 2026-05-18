@@ -8,7 +8,7 @@ export const dynamic = "force-static";
 export default function WorkspaceRoot() {
   const router = useRouter();
   useEffect(() => {
-    router.replace("/workspace/chat/");
+    router.replace("/workspace/apps/");
   }, [router]);
   return <p className="text-sm text-fg-muted">Loading…</p>;
 }
