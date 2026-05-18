@@ -41,7 +41,7 @@ const nextConfig: NextConfig = {
   // top-level `pnpm typecheck` / `pnpm lint` jobs for actual verification.
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
-  webpack: (config) => {
+  webpack: (config, { webpack }) => {
     // Files in ../src/components/* import @openuidev/* etc. Node's module
     // resolution walks UP from the importing file looking for node_modules,
     // and never finds local-ui/node_modules (which is a *sibling* path).
@@ -51,6 +51,19 @@ const nextConfig: NextConfig = {
     config.resolve = config.resolve ?? {};
     const existing: string[] = config.resolve.modules ?? ["node_modules"];
     config.resolve.modules = [localUiModules, ...existing];
+    // Redirect SaaS-side server-action modules to local-mode stubs. The real
+    // module has `"use server"` + drizzle/next-auth/bcrypt — local-ui has
+    // none of those deps, no DB, no auth. Use NormalModuleReplacementPlugin
+    // so Next.js's flight-action scan also sees the stub (a plain resolve
+    // alias only redirects the runtime import, not the action manifest).
+    const stub = path.resolve(__dirname, "stubs/agent-bindings-actions.ts");
+    config.plugins = config.plugins ?? [];
+    config.plugins.push(
+      new webpack.NormalModuleReplacementPlugin(
+        /^@\/lib\/agent-bindings\/actions$/,
+        stub,
+      ),
+    );
     return config;
   },
 };
